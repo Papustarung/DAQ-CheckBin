@@ -1,0 +1,260 @@
+[
+    {
+        "id": "3b02f30577a6a5ca",
+        "type": "inject",
+        "z": "948f0b260d3f9fa4",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "3600",
+        "crontab": "",
+        "once": true,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 270,
+        "y": 220,
+        "wires": [
+            [
+                "be8b406c09ccd159"
+            ]
+        ]
+    },
+    {
+        "id": "be8b406c09ccd159",
+        "type": "http request",
+        "z": "948f0b260d3f9fa4",
+        "name": "Open Meteo",
+        "method": "GET",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "https://api.open-meteo.com/v1/forecast?latitude=13.852560&longitude=100.580651&current=temperature_2m,relative_humidity_2m,precipitation,weather_code&timezone=Asia/Bangkok",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 470,
+        "y": 220,
+        "wires": [
+            [
+                "477c1de9aabcd3b7",
+                "30df47b0e9063257"
+            ]
+        ]
+    },
+    {
+        "id": "477c1de9aabcd3b7",
+        "type": "function",
+        "z": "948f0b260d3f9fa4",
+        "name": "JSON to SQL",
+        "func": "// 1. Extract values from the API response\nconst current = msg.payload.current;\nconst lat = msg.payload.latitude;\nconst lon = msg.payload.longitude;\n\n// 2. Format the timestamp (Open-Meteo uses \"2026-03-24T09:00\")\n// We replace 'T' with a space to make it MySQL-friendly: \"2026-03-24 09:00\"\nconst formattedTime = current.time.replace(\"T\", \" \");\n\n// 3. Prepare the SQL query (added 'timestamp' column)\nmsg.topic = \"INSERT INTO weather_history (timestamp, temp_c, humidity_pct, precipitation_mm, weather_code, lat, lon) VALUES (?, ?, ?, ?, ?, ?, ?);\";\n\n// 4. Create the array of values (order must match the SQL query above)\nmsg.payload = [\n    formattedTime,           // Added this\n    current.temperature_2m,\n    current.relative_humidity_2m,\n    current.precipitation,\n    current.weather_code,\n    lat,\n    lon\n];\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 680,
+        "y": 220,
+        "wires": [
+            [
+                "2b1f8cd27ec1783a"
+            ]
+        ]
+    },
+    {
+        "id": "2b1f8cd27ec1783a",
+        "type": "mysql",
+        "z": "948f0b260d3f9fa4",
+        "mydb": "52956a7b42c93898",
+        "name": "",
+        "x": 920,
+        "y": 280,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "30df47b0e9063257",
+        "type": "debug",
+        "z": "948f0b260d3f9fa4",
+        "name": "Open Meteo debug",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 690,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "2e35da58128c40c6",
+        "type": "mqtt in",
+        "z": "948f0b260d3f9fa4",
+        "name": "ToF IoT",
+        "topic": "b6710545989/checkbin/tof",
+        "qos": "2",
+        "datatype": "json",
+        "broker": "64371fb1b6a0d373",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 470,
+        "y": 280,
+        "wires": [
+            [
+                "e529d1a1cfcc8ef7"
+            ]
+        ]
+    },
+    {
+        "id": "e529d1a1cfcc8ef7",
+        "type": "function",
+        "z": "948f0b260d3f9fa4",
+        "name": "Format ToF SQL",
+        "func": "let bin_id = msg.payload.bin_id;\n\n// Safely handle if distance is out of range (null)\nlet distance_cm = msg.payload.distance_cm === null ? \"NULL\" : msg.payload.distance_cm;\n\n// Safely handle if NTP time failed (null). Fallback to database current time.\nlet recorded_at = msg.payload.recorded_at === null ? \"CURRENT_TIMESTAMP\" : `FROM_UNIXTIME(${msg.payload.recorded_at})`;\n\n// Build the SQL string and attach it to msg.topic for the MySQL node\nmsg.topic = `INSERT INTO fill_readings (bin_id, distance_cm, recorded_at) VALUES ('${bin_id}', ${distance_cm}, ${recorded_at});`;\n\n// Delete the payload to prevent MySQL node confusion\ndelete msg.payload;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 680,
+        "y": 280,
+        "wires": [
+            [
+                "2b1f8cd27ec1783a"
+            ]
+        ]
+    },
+    {
+        "id": "76bd23484bce5087",
+        "type": "mqtt in",
+        "z": "948f0b260d3f9fa4",
+        "name": "PIR IoT",
+        "topic": "b6710545989/checkbin/activity",
+        "qos": "2",
+        "datatype": "json",
+        "broker": "64371fb1b6a0d373",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 470,
+        "y": 340,
+        "wires": [
+            [
+                "67909fd47a252f13"
+            ]
+        ]
+    },
+    {
+        "id": "67909fd47a252f13",
+        "type": "function",
+        "z": "948f0b260d3f9fa4",
+        "name": "Format PIR SQL",
+        "func": "let bin_id = msg.payload.bin_id;\n\n// Safely handle if NTP time failed (null). \nlet timestamp = msg.payload.timestamp === null ? \"CURRENT_TIMESTAMP\" : `FROM_UNIXTIME(${msg.payload.timestamp})`;\n\nmsg.topic = `INSERT INTO activity_readings (bin_id, recorded_at) VALUES ('${bin_id}', ${timestamp});`;\n\ndelete msg.payload;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 680,
+        "y": 340,
+        "wires": [
+            [
+                "2b1f8cd27ec1783a"
+            ]
+        ]
+    },
+    {
+        "id": "ca2bf3d0e3cfc98d",
+        "type": "catch",
+        "z": "948f0b260d3f9fa4",
+        "name": "",
+        "scope": null,
+        "uncaught": false,
+        "x": 240,
+        "y": 540,
+        "wires": [
+            [
+                "73e607cbca841a20"
+            ]
+        ]
+    },
+    {
+        "id": "73e607cbca841a20",
+        "type": "debug",
+        "z": "948f0b260d3f9fa4",
+        "name": "all debug",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 480,
+        "y": 540,
+        "wires": []
+    },
+    {
+        "id": "52956a7b42c93898",
+        "type": "MySQLdatabase",
+        "name": "",
+        "host": "iot.cpe.ku.ac.th",
+        "port": "3306",
+        "db": "b6710545989",
+        "tz": "",
+        "charset": "UTF8"
+    },
+    {
+        "id": "64371fb1b6a0d373",
+        "type": "mqtt-broker",
+        "name": "",
+        "broker": "iot.cpe.ku.ac.th",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    }
+]

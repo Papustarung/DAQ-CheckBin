@@ -1,0 +1,547 @@
+[
+    {
+        "id": "651b230e5754a035",
+        "type": "http in",
+        "z": "7c8040deb58a3fe6",
+        "name": "status",
+        "url": "/checkbin/api/status",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 90,
+        "y": 160,
+        "wires": [
+            [
+                "17f2831a6a9e19bd"
+            ]
+        ]
+    },
+    {
+        "id": "feb77c86fa6634f0",
+        "type": "http response",
+        "z": "7c8040deb58a3fe6",
+        "name": "",
+        "statusCode": "200",
+        "headers": {
+            "content-type": "application/json"
+        },
+        "x": 820,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "17f2831a6a9e19bd",
+        "type": "function",
+        "z": "7c8040deb58a3fe6",
+        "name": "SQL query",
+        "func": "msg.topic = \"SELECT (SELECT distance_cm FROM fill_readings WHERE bin_id = 'checkbin_02' ORDER BY recorded_at DESC LIMIT 1) as distance, (SELECT recorded_at FROM activity_readings WHERE bin_id = 'checkbin_02' ORDER BY recorded_at DESC LIMIT 1) as last_activity, (SELECT temp_c FROM weather_history ORDER BY timestamp DESC LIMIT 1) as temp, (SELECT humidity_pct FROM weather_history ORDER BY timestamp DESC LIMIT 1) as humidity;\";\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 270,
+        "y": 160,
+        "wires": [
+            [
+                "185946ee2c5cd086"
+            ]
+        ]
+    },
+    {
+        "id": "185946ee2c5cd086",
+        "type": "mysql",
+        "z": "7c8040deb58a3fe6",
+        "mydb": "52956a7b42c93898",
+        "name": "",
+        "x": 460,
+        "y": 160,
+        "wires": [
+            [
+                "b30349d5c1792968"
+            ]
+        ]
+    },
+    {
+        "id": "b30349d5c1792968",
+        "type": "function",
+        "z": "7c8040deb58a3fe6",
+        "name": "status controller",
+        "func": "const data = msg.payload[0];\nconst dist = data.distance;\n\nconst sensorHeight = 35; // cm above rim\nconst binDepth = 75;     // cm depth\nconst maxDist = sensorHeight + binDepth; // 110 cm\n\nlet status = \"UNKNOWN\";\nlet filledPct = 0;\n\n// 1. Validate FIRST\nif (dist === null || dist > maxDist) {\n    status = \"EMPTY\";\n    filledPct = 0;\n\n} else if (dist < 12 || isNaN(dist)) {\n    // lid closed / invalid reading\n    status = \"UNKNOWN\";\n    filledPct = 0;\n\n} else {\n\n    // 2. Calculate percentage (still useful for display)\n    filledPct = ((maxDist - dist) / binDepth) * 100;\n    filledPct = Math.max(0, Math.min(100, filledPct));\n\n    // 3. Use DISTANCE-BASED thresholds (more reliable)\n    if (dist >= 80) {\n        // Far from trash → mostly empty\n        status = \"EMPTY\";\n\n    } else if (dist >= 60) {\n        // Around ~70% but may already be emptied\n        status = \"NORMAL\";\n\n    } else if (dist >= 45) {\n        // Mid-high level\n        status = \"ALMOST FULL\";\n\n    } else {\n        // 40–50 cm or less → FULL (your requirement)\n        status = \"FULL\";\n    }\n}\n\n// Time calculation\nconst now = new Date();\nconst activityTime = new Date(data.last_activity);\nconst diffMin = Math.floor((now - activityTime) / 60000);\n\n// 4. Format response\nmsg.payload = {\n    binId: \"checkbin_02\",\n    status: status,\n    percent: Math.round(filledPct),\n    displayStatus: `(${Math.round(filledPct)}% Full)`,\n    rawDistance: dist != null ? `${dist.toFixed(1)} cm` : \"N/A\",\n    lastActivity: diffMin,\n    weather: `${data.temp}°C, ${data.humidity}% humidity`\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 2,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 660,
+        "y": 160,
+        "wires": [
+            [
+                "feb77c86fa6634f0"
+            ]
+        ]
+    },
+    {
+        "id": "37dd4c0ea27752c9",
+        "type": "function",
+        "z": "7c8040deb58a3fe6",
+        "name": "sql query",
+        "func": "msg.topic = `\nSELECT \n    DATE(a.recorded_at) AS date_label,\n    HOUR(a.recorded_at) AS hour_of_day,\n    COUNT(a.id) AS activity_count,\n    MAX(w.precipitation_mm) AS rain_mm,\n    MAX(w.weather_code) AS weather_code\nFROM activity_readings a\nLEFT JOIN weather_history w \n    ON DATE(a.recorded_at) = DATE(w.timestamp) \n    AND HOUR(a.recorded_at) = HOUR(w.timestamp)\nWHERE a.bin_id = 'checkbin_02'\nGROUP BY date_label, hour_of_day\nORDER BY date_label, hour_of_day;\n`\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 280,
+        "y": 240,
+        "wires": [
+            [
+                "2c4e5a3c67438c57"
+            ]
+        ]
+    },
+    {
+        "id": "52fc4412f1f04352",
+        "type": "http in",
+        "z": "7c8040deb58a3fe6",
+        "name": "activity",
+        "url": "/checkbin/api/activity-frequency",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 90,
+        "y": 240,
+        "wires": [
+            [
+                "37dd4c0ea27752c9"
+            ]
+        ]
+    },
+    {
+        "id": "89e9bfa4ad6fe0d6",
+        "type": "function",
+        "z": "7c8040deb58a3fe6",
+        "name": "activity freq controller",
+        "func": "// Initialize a 24-hour grid for the dates found in the data\nconst heatmapData = {};\nconst days = [...new Set(msg.payload.map(item => item.date_label))];\n\n// Create the structure: { hour: { date1: count, date2: count } }\nfor (let h = 0; h < 24; h++) {\n    heatmapData[h] = {};\n    days.forEach(day => {\n        heatmapData[h][day] = { count: 0, rain: 0 };\n    });\n}\n\n// Fill the grid with actual data\nmsg.payload.forEach(row => {\n    const hour = row.hour_of_day;\n    const day = row.date_label;\n    heatmapData[hour][day] = {\n        count: row.activity_count,\n        isRainy: row.rain_mm > 0 || row.weather_code >= 3 // Adjust code based on your API\n    };\n});\n\nmsg.payload = {\n    labels: days, // Columns: [\"2026-04-17\", \"2026-04-18\"]\n    data: heatmapData // Rows 0-23\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 680,
+        "y": 240,
+        "wires": [
+            [
+                "f329c90b6f2c3588"
+            ]
+        ]
+    },
+    {
+        "id": "f329c90b6f2c3588",
+        "type": "http response",
+        "z": "7c8040deb58a3fe6",
+        "name": "",
+        "statusCode": "200",
+        "headers": {
+            "content-type": "application/json"
+        },
+        "x": 880,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "2c4e5a3c67438c57",
+        "type": "mysql",
+        "z": "7c8040deb58a3fe6",
+        "mydb": "52956a7b42c93898",
+        "name": "",
+        "x": 460,
+        "y": 240,
+        "wires": [
+            [
+                "89e9bfa4ad6fe0d6"
+            ]
+        ]
+    },
+    {
+        "id": "a274581f57cd206e",
+        "type": "function",
+        "z": "7c8040deb58a3fe6",
+        "name": "sql query",
+        "func": "msg.topic = `\nSELECT \n    f.recorded_at AS time,\n    f.distance_cm AS distance,\n    (\n        SELECT COUNT(*) \n        FROM activity_readings a \n        WHERE a.bin_id = f.bin_id \n        AND a.recorded_at > f.recorded_at - INTERVAL 10 MINUTE\n        AND a.recorded_at <= f.recorded_at\n    ) AS activity_count\nFROM fill_readings f\nWHERE f.bin_id = 'checkbin_02'\nORDER BY f.recorded_at ASC;\n`\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 280,
+        "y": 320,
+        "wires": [
+            [
+                "4a9380dbee9a55b0"
+            ]
+        ]
+    },
+    {
+        "id": "6eb1c53b51e706f5",
+        "type": "http in",
+        "z": "7c8040deb58a3fe6",
+        "name": "overflow",
+        "url": "/checkbin/api/overflow",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 100,
+        "y": 320,
+        "wires": [
+            [
+                "a274581f57cd206e"
+            ]
+        ]
+    },
+    {
+        "id": "4a9380dbee9a55b0",
+        "type": "mysql",
+        "z": "7c8040deb58a3fe6",
+        "mydb": "52956a7b42c93898",
+        "name": "",
+        "x": 460,
+        "y": 320,
+        "wires": [
+            [
+                "b9e63a79d90f2785"
+            ]
+        ]
+    },
+    {
+        "id": "b9e63a79d90f2785",
+        "type": "function",
+        "z": "7c8040deb58a3fe6",
+        "name": "overflow controller",
+        "func": "const rawData = msg.payload;\nconst processedData = [];\n\nconst sensorHeight = 35; \nconst binDepth = 75;     \nconst maxDist = sensorHeight + binDepth; \n\nlet prevDist = null;\n\nrawData.forEach(row => {\n    const dist = row.distance;\n    let status = \"UNKNOWN\";\n    let filledPct = 0;\n    let event = null;\n\n    // 1. User's Validation Logic\n    if (dist === null || dist > maxDist) {\n        status = \"EMPTY\";\n        filledPct = 0;\n    } else if (dist < 12 || isNaN(dist)) {\n        status = \"UNKNOWN\"; // Lid closed / invalid\n        filledPct = 0;\n    } else {\n        // Calculate Percentage\n        filledPct = ((maxDist - dist) / binDepth) * 100;\n        filledPct = Math.max(0, Math.min(100, filledPct));\n\n        // Distance Thresholds\n        if (dist >= 80) status = \"EMPTY\";\n        else if (dist >= 60) status = \"NORMAL\";\n        else if (dist >= 45) status = \"ALMOST FULL\";\n        else status = \"FULL\";\n    }\n\n    // 2. Detect Emptying Event (Sudden jump in distance)\n    // If the distance suddenly increases by more than 40cm, someone emptied it.\n    if (prevDist !== null && dist - prevDist > 40 && dist >= 80) {\n        event = \"Emptied\";\n    }\n    prevDist = dist;\n\n    // Format time for frontend (e.g., \"14:30\")\n    const dateObj = new Date(row.time);\n    const timeString = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });\n\n    processedData.push({\n        time: timeString,\n        fullDate: row.time,\n        distance: dist,\n        filledPct: Math.round(filledPct),\n        status: status,\n        activity: row.activity_count,\n        event: event\n    });\n});\n\nmsg.payload = processedData;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 670,
+        "y": 320,
+        "wires": [
+            [
+                "c2262e85e0ed9b50"
+            ]
+        ]
+    },
+    {
+        "id": "c2262e85e0ed9b50",
+        "type": "http response",
+        "z": "7c8040deb58a3fe6",
+        "name": "",
+        "statusCode": "200",
+        "headers": {
+            "content-type": "application/json"
+        },
+        "x": 860,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "eb01e9a91d80873b",
+        "type": "function",
+        "z": "7c8040deb58a3fe6",
+        "name": "sql query",
+        "func": "msg.topic = `\nSELECT \n    w.timestamp AS hour_label,\n    w.humidity_pct,\n    w.precipitation_mm,\n    (\n        SELECT COUNT(*) \n        FROM activity_readings a \n        WHERE a.bin_id = 'checkbin_02' \n        AND a.recorded_at >= w.timestamp \n        AND a.recorded_at < w.timestamp + INTERVAL 1 HOUR\n    ) AS activity_count\nFROM weather_history w\nWHERE w.timestamp >= (SELECT MIN(recorded_at) FROM activity_readings WHERE bin_id = 'checkbin_02')\nORDER BY w.timestamp ASC;\n`\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 280,
+        "y": 380,
+        "wires": [
+            [
+                "cc631c0a438c680d"
+            ]
+        ]
+    },
+    {
+        "id": "1bcbb3eb49d73cc2",
+        "type": "http in",
+        "z": "7c8040deb58a3fe6",
+        "name": "humidity x bin usage",
+        "url": "/checkbin/api/humidity-bin-usage",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 90,
+        "y": 380,
+        "wires": [
+            [
+                "eb01e9a91d80873b"
+            ]
+        ]
+    },
+    {
+        "id": "cc631c0a438c680d",
+        "type": "mysql",
+        "z": "7c8040deb58a3fe6",
+        "mydb": "52956a7b42c93898",
+        "name": "",
+        "x": 480,
+        "y": 380,
+        "wires": [
+            [
+                "8dcd8fdcaf9ae70b"
+            ]
+        ]
+    },
+    {
+        "id": "8dcd8fdcaf9ae70b",
+        "type": "function",
+        "z": "7c8040deb58a3fe6",
+        "name": "humid x bin controller",
+        "func": "const data = msg.payload;\n\n// Helper function for Pearson Correlation\nfunction getCorrelation(x, y) {\n    const n = x.length;\n    if (n === 0) return 0;\n    const sumX = x.reduce((a, b) => a + b, 0);\n    const sumY = y.reduce((a, b) => a + b, 0);\n    const sumXY = x.reduce((a, b, i) => a + b * y[i], 0);\n    const sumX2 = x.reduce((a, b) => a + b * b, 0);\n    const sumY2 = y.reduce((a, b) => a + b * b, 0);\n    \n    const num = (n * sumXY) - (sumX * sumY);\n    const den = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));\n    return den === 0 ? 0 : (num / den).toFixed(2);\n}\n\nconst activityArr = data.map(d => d.activity_count);\nconst humidityArr = data.map(d => d.humidity_pct);\nconst rainArr = data.map(d => d.precipitation_mm);\n\nmsg.payload = {\n    correlation: {\n        humidity: getCorrelation(activityArr, humidityArr),\n        rain: getCorrelation(activityArr, rainArr)\n    },\n    timeline: data.map(d => ({\n        time: new Date(d.hour_label).getHours() + \":00\",\n        activity: d.activity_count,\n        humidity: d.humidity_pct,\n        rain: d.precipitation_mm\n    }))\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 710,
+        "y": 380,
+        "wires": [
+            [
+                "028178d8b1eb9156"
+            ]
+        ]
+    },
+    {
+        "id": "028178d8b1eb9156",
+        "type": "http response",
+        "z": "7c8040deb58a3fe6",
+        "name": "",
+        "statusCode": "200",
+        "headers": {
+            "content-type": "application/json"
+        },
+        "x": 900,
+        "y": 380,
+        "wires": []
+    },
+    {
+        "id": "5a7b87ea05ca4104",
+        "type": "function",
+        "z": "7c8040deb58a3fe6",
+        "name": "sql query",
+        "func": "msg.topic = `\n    -- 1. Sensor Stats: Count only valid 'Full' durations (12cm - 44.9cm)\n    SELECT \n        COUNT(*) as total_readings,\n        SUM(CASE WHEN distance_cm >= 12 AND distance_cm < 45 THEN 1 ELSE 0 END) as full_readings\n    FROM fill_readings \n    WHERE bin_id = 'checkbin_02';\n\n    -- 2. Survey Stats: General perceptions\n    SELECT \n        COUNT(*) as total_users,\n        SUM(CASE WHEN encountered_overflow = 'Yes' THEN 1 ELSE 0 END) as overflow_reports,\n        AVG(CAST(cleanliness_satisfaction AS DECIMAL(10,2))) as avg_satisfaction\n    FROM survey_responses;\n`;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 280,
+        "y": 460,
+        "wires": [
+            [
+                "c8e3738e20f0c480"
+            ]
+        ]
+    },
+    {
+        "id": "fd71217ef85c6403",
+        "type": "http in",
+        "z": "7c8040deb58a3fe6",
+        "name": "perception",
+        "url": "/checkbin/api/perception",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 100,
+        "y": 460,
+        "wires": [
+            [
+                "5a7b87ea05ca4104"
+            ]
+        ]
+    },
+    {
+        "id": "c8e3738e20f0c480",
+        "type": "mysql",
+        "z": "7c8040deb58a3fe6",
+        "mydb": "52956a7b42c93898",
+        "name": "",
+        "x": 460,
+        "y": 460,
+        "wires": [
+            [
+                "7563b28c16f03d9c"
+            ]
+        ]
+    },
+    {
+        "id": "7563b28c16f03d9c",
+        "type": "function",
+        "z": "7c8040deb58a3fe6",
+        "name": "perception controller",
+        "func": "if (!msg.payload || msg.payload.length < 2) return null;\n\nconst sensorStats = msg.payload[0][0]; \nconst surveyStats = msg.payload[1][0]; \n\n// 1. Reality Calculation:\n// We only count readings between 12cm and 45cm as \"Full\".\n// Values < 12 (Lid Closed) are ignored from the numerator.\nconst realityPct = Math.round((sensorStats.full_readings / sensorStats.total_readings) * 100);\n\n// 2. Perception Calculation:\nconst perceptionPct = Math.round((surveyStats.overflow_reports / surveyStats.total_users) * 100);\n\n// 3. The Gap Logic:\nconst gap = perceptionPct - realityPct;\n\nmsg.payload = {\n    summary: {\n        realityScore: realityPct,\n        perceptionScore: perceptionPct,\n        satisfaction: parseFloat(surveyStats.avg_satisfaction || 0).toFixed(1),\n        totalResponses: surveyStats.total_users\n    },\n    narrative: {\n        title: \"Perception vs. Reality Gap\",\n        value: gap,\n        analysis: gap > 0 \n            ? `Users think the bin is full ${gap}% more often than sensor data shows. (Note: Lid-closed events are filtered).` \n            : `The bin stays full ${Math.abs(gap)}% more than users report.`\n    }\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 720,
+        "y": 460,
+        "wires": [
+            [
+                "1ad3bbe3c9a106b7"
+            ]
+        ]
+    },
+    {
+        "id": "1ad3bbe3c9a106b7",
+        "type": "http response",
+        "z": "7c8040deb58a3fe6",
+        "name": "",
+        "statusCode": "200",
+        "headers": {
+            "content-type": "application/json"
+        },
+        "x": 900,
+        "y": 460,
+        "wires": []
+    },
+    {
+        "id": "f82fa11c03aeba3c",
+        "type": "catch",
+        "z": "7c8040deb58a3fe6",
+        "name": "",
+        "scope": null,
+        "uncaught": false,
+        "x": 120,
+        "y": 100,
+        "wires": [
+            [
+                "5971680f9da0671e"
+            ]
+        ]
+    },
+    {
+        "id": "5971680f9da0671e",
+        "type": "debug",
+        "z": "7c8040deb58a3fe6",
+        "name": "debug 4",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 340,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "1a5371a413ab792d",
+        "type": "function",
+        "z": "7c8040deb58a3fe6",
+        "name": "sql query",
+        "func": "// ── Query Builder: fill prediction ──────────────────────────────\nconst binId = msg.req.params.bin_id || msg.req.query.bin_id || 'checkbin_02';\n\nmsg.binId = binId;\n\nmsg.topic = `\n    SELECT distance_cm, recorded_at\n    FROM fill_readings\n    WHERE bin_id = ?\n      AND distance_cm IS NOT NULL\n    ORDER BY recorded_at DESC\n    LIMIT 72\n`;\n// NOTE: removed the >= 12 filter here — we need raw data to detect post-emptying state\n\nmsg.payload = [binId];\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 280,
+        "y": 540,
+        "wires": [
+            [
+                "9bf4ef0aae97db5b"
+            ]
+        ]
+    },
+    {
+        "id": "21a9197c50a7bce6",
+        "type": "http in",
+        "z": "7c8040deb58a3fe6",
+        "name": "prdt empty",
+        "url": "/checkbin/api/prediction/empty",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 100,
+        "y": 540,
+        "wires": [
+            [
+                "1a5371a413ab792d"
+            ]
+        ]
+    },
+    {
+        "id": "9bf4ef0aae97db5b",
+        "type": "mysql",
+        "z": "7c8040deb58a3fe6",
+        "mydb": "52956a7b42c93898",
+        "name": "",
+        "x": 460,
+        "y": 540,
+        "wires": [
+            [
+                "1308d2dbeb13980e"
+            ]
+        ]
+    },
+    {
+        "id": "1308d2dbeb13980e",
+        "type": "function",
+        "z": "7c8040deb58a3fe6",
+        "name": "prediction empty controller",
+        "func": "// ════════════════════════════════════════════════════════════════\n// Controller: fill prediction\n// Handles all post-emptying states:\n//   - dist > 110 or null  → EMPTY (sensor out of range)\n//   - dist ~90            → EMPTY (bag bloat / bumps after emptying)\n//   - dist < 12           → UNKNOWN (lid closed or bag placed nearby)\n//   - normal fill range   → categorize normally\n// ════════════════════════════════════════════════════════════════\n\n// ── Constants ────────────────────────────────────────────────────\nconst SENSOR_HEIGHT = 35;   // cm, sensor mounted above rim\nconst BIN_DEPTH = 75;   // cm, total bin depth\nconst MAX_DIST = SENSOR_HEIGHT + BIN_DEPTH; // 110 cm\n\nconst LID_ON_MAX_CM = 12;   // below this → lid closed or bag blocking sensor\nconst EMPTY_MIN_CM = 80;   // above this → bin is empty\nconst CLEANER_THRESHOLD_CM = 60;   // cleaner typically acts here (~70% fill)\nconst EMPTYING_DELTA_CM = 40;   // sudden jump larger than this = emptying event\nconst BAG_BLOAT_RANGE_MIN = 80;   // after emptying, bag can sit at 80–95 cm\nconst BAG_BLOAT_RANGE_MAX = 110;  //   (sensor still reads it but bin is empty)\n\n// ── Helper: categorize a single distance reading ─────────────────\nfunction categorize(dist) {\n    if (dist === null || dist === undefined || isNaN(dist) || dist > MAX_DIST) {\n        return { status: \"EMPTY\", filledPct: 0 };\n    }\n    if (dist < LID_ON_MAX_CM) {\n        return { status: \"UNKNOWN\", filledPct: 0 };\n    }\n\n    let filledPct = ((MAX_DIST - dist) / BIN_DEPTH) * 100;\n    filledPct = Math.round(Math.max(0, Math.min(100, filledPct)) * 10) / 10;\n\n    let status;\n    if (dist >= 80) status = \"EMPTY\";\n    else if (dist >= 60) status = \"NORMAL\";\n    else if (dist >= 45) status = \"ALMOST FULL\";\n    else status = \"FULL\";\n\n    return { status, filledPct };\n}\n\n// ── Helper: detect emptying events ───────────────────────────────\n// readings = newest-first from DB\n// Returns array of events, each with index into the ordered (oldest-first) array\nfunction detectEmptyingEvents(orderedReadings) {\n    const events = [];\n    for (let i = 1; i < orderedReadings.length; i++) {\n        const prev = parseFloat(orderedReadings[i - 1].distance_cm);\n        const curr = parseFloat(orderedReadings[i].distance_cm);\n\n        // Handle out-of-range as \"very far\" = 250 for delta calculation\n        const prevDist = isNaN(prev) || prev > MAX_DIST ? 250 : prev;\n        const currDist = isNaN(curr) || curr > MAX_DIST ? 250 : curr;\n\n        const delta = currDist - prevDist; // positive = distance increased = trash removed\n\n        if (delta > EMPTYING_DELTA_CM) {\n            events.push({\n                event: \"emptying_detected\",\n                at: orderedReadings[i].recorded_at,\n                before_cm: prevDist > 200 ? null : prevDist,\n                after_cm: currDist > 200 ? null : currDist,\n                delta_cm: Math.round(delta * 10) / 10,\n                index: i   // position in orderedReadings — used to split cycles\n            });\n        }\n    }\n    return events;\n}\n\n// ── Helper: determine if current state is post-emptying ──────────\n// After emptying, bin can read: null / >110 / 80-110 (bag bloat) / <12 (lid/bag nearby)\n// Strategy: if the most recent emptying event is recent AND current dist is\n//           in the \"freshly emptied\" range, treat as post-emptying.\nfunction isPostEmptyingState(dist, emptyingEvents, orderedReadings) {\n    if (emptyingEvents.length === 0) return false;\n\n    const lastEvent = emptyingEvents[emptyingEvents.length - 1];\n    const lastEventIndex = lastEvent.index;\n    const totalReadings = orderedReadings.length;\n\n    // How many readings have occurred since the last emptying event?\n    const readingsSinceEmpty = totalReadings - 1 - lastEventIndex;\n\n    // If emptying happened within the last 24 hours of readings AND\n    // current dist suggests empty/near-empty/obstructed state\n    const distIsEmpty = dist === null || isNaN(dist) || dist > MAX_DIST;\n    const distIsBagBloat = dist >= BAG_BLOAT_RANGE_MIN && dist <= BAG_BLOAT_RANGE_MAX;\n    const distIsLidOrBag = dist < LID_ON_MAX_CM;\n\n    if ((distIsEmpty || distIsBagBloat || distIsLidOrBag) && readingsSinceEmpty <= 144) {\n        // 144 readings = 24 hours at 10-min intervals\n        return true;\n    }\n\n    return false;\n}\n\n// ── Helper: linear regression ─────────────────────────────────────\n// points = [{ x: hoursElapsed, y: distance_cm }, ...]\nfunction linearRegression(points) {\n    const n = points.length;\n    if (n < 2) return null;\n\n    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;\n    for (const { x, y } of points) {\n        sumX += x;\n        sumY += y;\n        sumXY += x * y;\n        sumXX += x * x;\n    }\n\n    const denom = (n * sumXX - sumX * sumX);\n    if (Math.abs(denom) < 1e-9) return null;\n\n    const slope = (n * sumXY - sumX * sumY) / denom;\n    const intercept = (sumY - slope * sumX) / n;\n\n    // R² for confidence\n    const yMean = sumY / n;\n    let ssTot = 0, ssRes = 0;\n    for (const { x, y } of points) {\n        ssTot += (y - yMean) ** 2;\n        ssRes += (y - (slope * x + intercept)) ** 2;\n    }\n    const r2 = ssTot < 1e-9 ? 0 : 1 - ssRes / ssTot;\n\n    return { slope, intercept, r2 };\n}\n\n// ── Helper: build prediction from regression ──────────────────────\nfunction buildPrediction(regression, t0, dataPointCount) {\n    if (!regression) return null;\n\n    const { slope, intercept, r2 } = regression;\n    const isFilling = slope < -0.01;\n\n    if (!isFilling) {\n        return {\n            fill_rate_cm_per_hour: Math.round(slope * 1000) / 1000,\n            note: slope >= 0\n                ? \"Bin is not filling — distance stable or increasing.\"\n                : \"Fill rate too slow to make a meaningful prediction.\"\n        };\n    }\n\n    // Time from t0 (oldest point) when dist hits CLEANER_THRESHOLD_CM\n    const hoursFromStart = (CLEANER_THRESHOLD_CM - intercept) / slope;\n    const nowOffsetHours = (Date.now() - t0) / 3600000;\n    const hoursFromNow = hoursFromStart - nowOffsetHours;\n\n    // Build projection points for chart (hourly for next 24h)\n    const projectionHours = Math.min(24, Math.ceil(Math.abs(hoursFromNow)) + 2);\n    const projectionPoints = [];\n    for (let h = 0; h <= projectionHours; h++) {\n        const futureHours = nowOffsetHours + h;\n        const projDist = slope * futureHours + intercept;\n        const clampedDist = Math.max(0, Math.min(MAX_DIST, projDist));\n        projectionPoints.push({\n            offset_hours: h,\n            timestamp: new Date(Date.now() + h * 3600000).toISOString(),\n            distance_cm: Math.round(clampedDist * 10) / 10,\n            ...categorize(clampedDist)\n        });\n    }\n\n    const confidence = r2 >= 0.85 ? \"high\"\n        : r2 >= 0.5 ? \"moderate\"\n            : \"low\";\n\n    if (hoursFromNow <= 0) {\n        return {\n            threshold_cm: CLEANER_THRESHOLD_CM,\n            hours_until_threshold: 0,\n            predicted_at: new Date().toISOString(),\n            fill_rate_cm_per_hour: Math.round(slope * 1000) / 1000,\n            r_squared: Math.round(r2 * 1000) / 1000,\n            confidence,\n            model: \"linear_regression\",\n            data_points_used: dataPointCount,\n            note: \"Threshold already reached — emptying recommended now.\",\n            projection_points: projectionPoints\n        };\n    }\n\n    return {\n        threshold_cm: CLEANER_THRESHOLD_CM,\n        hours_until_threshold: Math.round(hoursFromNow * 10) / 10,\n        predicted_at: new Date(Date.now() + hoursFromNow * 3600000).toISOString(),\n        fill_rate_cm_per_hour: Math.round(slope * 1000) / 1000,\n        r_squared: Math.round(r2 * 1000) / 1000,\n        confidence,\n        model: \"linear_regression\",\n        data_points_used: dataPointCount,\n        projection_points: projectionPoints\n    };\n}\n\n\n// ════════════════════════════════════════════════════════════════\n// MAIN\n// ════════════════════════════════════════════════════════════════\n\nconst rows = msg.payload;\nconst binId = msg.binId;\n\nif (!rows || rows.length === 0) {\n    msg.payload = { bin_id: binId, error: \"no_data\", message: \"No fill readings found.\" };\n    msg.statusCode = 404;\n    return msg;\n}\n\n// Work in chronological order (oldest first) for regression & event detection\nconst ordered = [...rows].reverse();\n\n// Detect emptying events across all readings\nconst emptyingEvents = detectEmptyingEvents(ordered);\n\n// ── Current state from latest reading ────────────────────────────\nconst latest = rows[0];   // newest-first, so index 0 is latest\nconst latestDist = parseFloat(latest.distance_cm);\nconst { status: currentStatus, filledPct } = categorize(latestDist);\n\n// ── Check if we're in a post-emptying state ───────────────────────\nconst postEmptying = isPostEmptyingState(latestDist, emptyingEvents, ordered);\n\nif (postEmptying) {\n    // Determine the specific sub-reason\n    let subReason;\n    if (latestDist === null || isNaN(latestDist) || latestDist > MAX_DIST) {\n        subReason = \"out_of_range_reading\";\n    } else if (latestDist >= BAG_BLOAT_RANGE_MIN) {\n        subReason = \"possible_bag_bloat_or_bump\";\n    } else if (latestDist < LID_ON_MAX_CM) {\n        subReason = \"lid_closed_or_bag_nearby\";\n    } else {\n        subReason = \"empty_after_service\";\n    }\n\n    msg.payload = {\n        bin_id: binId,\n        current_status: \"EMPTY\",\n        current_distance_cm: isNaN(latestDist) ? null : latestDist,\n        filled_pct: 0,\n        last_reading_at: latest.recorded_at,\n        post_emptying_state: true,\n        post_emptying_reason: subReason,\n        note: \"Bin was recently emptied. Fill level readings unreliable until new waste accumulates.\",\n        prediction: null,\n        emptying_events: emptyingEvents,\n        data_points_used: rows.length\n    };\n    msg.statusCode = 200;\n    return msg;\n}\n\n// ── Check for UNKNOWN (lid/bag) outside post-emptying context ─────\nif (currentStatus === \"UNKNOWN\") {\n    const lastValid = rows.find(r => {\n        const d = parseFloat(r.distance_cm);\n        return d >= LID_ON_MAX_CM && d <= MAX_DIST;\n    });\n\n    msg.payload = {\n        bin_id: binId,\n        current_status: \"UNKNOWN\",\n        current_distance_cm: isNaN(latestDist) ? null : latestDist,\n        filled_pct: 0,\n        last_reading_at: latest.recorded_at,\n        note: \"Distance < 12 cm — sensor blocked by swing lid or bag placed nearby.\",\n        prediction: null,\n        last_valid_reading: lastValid ? {\n            distance_cm: parseFloat(lastValid.distance_cm),\n            recorded_at: lastValid.recorded_at,\n            ...categorize(parseFloat(lastValid.distance_cm))\n        } : null,\n        emptying_events: emptyingEvents,\n        data_points_used: rows.length\n    };\n    msg.statusCode = 200;\n    return msg;\n}\n\n// ── Normal state: build regression for prediction ─────────────────\n\n// Only use readings from AFTER the last emptying event (if any)\n// so we don't regress across an emptying boundary\nlet regressionReadings = ordered;\nif (emptyingEvents.length > 0) {\n    const lastEventIndex = emptyingEvents[emptyingEvents.length - 1].index;\n    regressionReadings = ordered.slice(lastEventIndex + 1);\n}\n\n// Filter to valid measurable readings only\nregressionReadings = regressionReadings.filter(r => {\n    const d = parseFloat(r.distance_cm);\n    return !isNaN(d) && d >= LID_ON_MAX_CM && d <= MAX_DIST;\n});\n\nlet prediction = null;\n\nif (regressionReadings.length >= 2) {\n    const t0 = new Date(regressionReadings[0].recorded_at).getTime();\n    const points = regressionReadings.map(r => ({\n        x: (new Date(r.recorded_at).getTime() - t0) / 3600000,\n        y: parseFloat(r.distance_cm)\n    }));\n\n    const regression = linearRegression(points);\n    prediction = buildPrediction(regression, t0, regressionReadings.length);\n}\n\n// ── Final response ────────────────────────────────────────────────\nmsg.payload = {\n    bin_id: binId,\n    current_status: currentStatus,\n    current_distance_cm: latestDist,\n    filled_pct: filledPct,\n    last_reading_at: latest.recorded_at,\n    post_emptying_state: false,\n    prediction,\n    emptying_events: emptyingEvents,\n    data_points_used: rows.length\n};\nmsg.statusCode = 200;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 740,
+        "y": 540,
+        "wires": [
+            [
+                "661f300c7c76e784"
+            ]
+        ]
+    },
+    {
+        "id": "661f300c7c76e784",
+        "type": "http response",
+        "z": "7c8040deb58a3fe6",
+        "name": "",
+        "statusCode": "200",
+        "headers": {
+            "content-type": "application/json"
+        },
+        "x": 960,
+        "y": 540,
+        "wires": []
+    },
+    {
+        "id": "52956a7b42c93898",
+        "type": "MySQLdatabase",
+        "name": "",
+        "host": "iot.cpe.ku.ac.th",
+        "port": "3306",
+        "db": "b6710545989",
+        "tz": "",
+        "charset": "UTF8"
+    }
+]
