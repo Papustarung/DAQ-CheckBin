@@ -1,4 +1,8 @@
 # CHECKBIN
+
+## 🎬 Video Presentation
+[Watch on YouTube](https://youtu.be/KFXoyn3ct2k)
+
 ## 🧍 Team Members
 Pasin Tongtip 6710545741 – Software and Knowledge Engineering, Faculty of Engineering, Kasetsart University
 
