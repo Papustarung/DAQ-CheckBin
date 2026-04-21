@@ -1,5 +1,5 @@
 # CHECKBIN
-## 🧍 Team Members 
+## 🧍 Team Members
 Pasin Tongtip 6710545741 – Software and Knowledge Engineering, Faculty of Engineering, Kasetsart University
 
 Amornrit Sirikham 6710545989 – Software and Knowledge Engineering, Faculty of Engineering, Kasetsart University
@@ -10,7 +10,7 @@ Checkbin is an IoT-based waste bin monitoring project using KidBright32 to colle
 ### 1️⃣ Primary data source
 1. IoT sensor data
 
-Bin fill level from HC-SR04 ultrasonic sensor
+Bin fill level from VL53L0X Laser Ranging Distance sensor
 Nearby motion/activity from HC-SR501 PIR sensor
 
 Collection method: KidBright32 reads sensor values at fixed intervals and sends timestamped data to the backend/database.
@@ -43,6 +43,47 @@ It will answer questions such as:
 * When should the bin be emptied based on recent usage trends?
 
 ### 4️⃣ Sensors used
-* HC-SR04 — 1x
+* VL53L0X — 1x
 * HC-SR501 — 1x
+
+---
+
+## 🖥️ Frontend
+
+The dashboard is a Next.js 15 app with TypeScript and Tailwind CSS located in the `frontend/` folder.
+
+### Prerequisites
+* Node.js 18+ and npm
+
+### Installation
+
+```bash
+cd frontend
+npm install
+```
+
+### Running (development)
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser. The app redirects to `/dashboard` automatically.
+
+### Building for production
+
+```bash
+npm run build
+npm start
+```
+
+### Backend proxy
+
+API calls from the frontend are proxied through Next.js rewrites to avoid CORS issues. The target base URL is configured in `frontend/next.config.ts`:
+
+```
+/api/backend/<endpoint>  →  https://iot.cpe.ku.ac.th/red/b6710545989/checkbin/api/<endpoint>
+```
+
+No additional environment variables are required for local development.
 

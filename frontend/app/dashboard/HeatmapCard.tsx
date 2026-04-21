@@ -30,7 +30,7 @@ export default function HeatmapCard() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    fetch("/api/backend/activity_frequency")
+    fetch("/api/backend/activity-frequency")
       .then((res) => res.json())
       .then(setHeatmap)
       .catch(() => setError(true));
